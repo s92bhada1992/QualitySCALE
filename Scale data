@@ -1,0 +1,123 @@
+with main_table as
+                 (SELECT box_id,
+                         line,
+                         max(pipeline_id) as station
+                  FROM materialized_views.p2l_movement
+                  where event_timestamp between '2022-07-14 00:01:59.393' and '2022-07-21 23:59:59.393'
+                  group by 1, 2),
+        
+             boxes_id as
+                 (Select m.*,
+                         l.box_size
+                  from main_table m
+                           left Join materialized_views.prod_db_picks_per_box l on
+                      m.box_id = l.box_id
+                  where l.box_size > '0')
+        
+        
+        SELECT t.event_timestamp,
+               day(t.timestamp) as production_day,
+        
+               t.city,
+               t.country,
+               p.line,
+               t.step_id,
+               t.package_id,
+               p.box_id,
+               p.box_size,
+               p.station,
+               t.package_id,
+               t.event_type,
+               t.config_name,
+               t.fk_imported_at
+        FROM materialized_views.p2l_movement t
+                 Join boxes_id p on
+            t.box_id = p.box_id
+        WHERE city = 'Banbury'
+          and
+        t.event_type= 'completed’:
+
+select mapped_dc,
+                        mapped_line,
+                        production_hour,
+                        hellofresh_week,
+                        production_day,
+                        count(distinct active_min)active_min_per_hour
+                 from (SELECT bpd.mapped_dc,
+                              bpd.mapped_line,
+                              hellofresh_week,
+                              production_day,
+                              production_hour,
+                           minute (cast (box_end_time as timestamp)) active_min
+                       FROM materialized_views.box_production_dimensions bpd) minute_level
+                        where mapped_dc='Nuneaton'
+        and hellofresh_week>'2022-W13'
+        
+        
+                 group by mapped_dc,
+                          mapped_line,
+                          hellofresh_week,
+                          production_day,
+                          production_hour
+
+
+//SELECT  line,
+        Max(case when city='Verden' then pipeline_id else null end) as station
+                  FROM materialized_views.p2l_movement
+                  where city='Verden'
+                        and
+                        event_timestamp between '2022-07-25 00:01:59.393' and '2022-07-31 23:59:59.393'
+                  group by 1;
+
+ //with Max_st as
+     (SELECT
+    line,
+       box_id,
+       max(pipeline_id) as  max_station
+        FROM materialized_views.p2l_movement t
+        WHERE city= 'Verden' and  event_timestamp between '2022-07-25 00:01:59.393' and '2022-07-31 23:59:59.39'
+        and line in ('ASL7')
+     and pipeline_id<> 0
+              group by 1,2)
+
+    select
+        m.*,
+       t.event_timestamp,
+        t.event_type
+from Max_st m
+left join materialized_views.p2l_movement t on
+    m.line=t.line
+and m.box_id=t.box_id
+and m.max_station = t.pipeline_id
+
+where t.event_type = 'entered';
+with Box_data as
+    (select mapped_dc,
+                        mapped_line,
+                        production_hour,
+                        hellofresh_week,
+                        production_day,
+                        count(distinct active_min)active_min_per_hour
+                 from (SELECT bpd.mapped_dc,
+                              bpd.mapped_line,
+                              hellofresh_week,
+                              production_day,
+                              production_hour,
+                           minute (cast (box_end_time as timestamp)) active_min
+                       FROM materialized_views.box_production_dimensions bpd) minute_level
+                        where mapped_dc='Verden'
+        and hellofresh_week between '2022-W13' and '2022-W25'
+
+
+                 group by mapped_dc,
+                          mapped_line,
+                          hellofresh_week,
+                          production_day,
+                          production_hour)
+SELECT m.*,
+       t.boxes_per_day
+        FROM materialized_views.prod_db_boxes_per_day t
+left join Box_data m on t.mapped_dc=m.mapped_dc
+                    and    t.mapped_line=m.mapped_line
+                    and    t.production_hour=m.production_hour
+                      and  t.production_day=m.production_day
