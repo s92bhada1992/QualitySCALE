@@ -1,0 +1,95 @@
+with bs AS
+(select
+ed.country,
+CASE WHEN CONCAT(ed.country,bs.dc) IN ('ATAT', 'ATAT-unknown', 'DEDE', 'DEDE-unknown') THEN 'Verden'
+WHEN CONCAT(ed.country,bs.dc) IN ('AUAO-unknown', 'AUAU-unknown', 'AUYE-unknown') THEN 'AU:unmapped'
+WHEN CONCAT(ed.country,bs.dc) = 'AUMelbourne' THEN 'Melbourne'
+WHEN CONCAT(ed.country,bs.dc) = 'AUPerth' THEN 'Perth'
+WHEN CONCAT(ed.country,bs.dc) = 'AUSydney' THEN 'Sydney'
+WHEN CONCAT(ed.country,bs.dc) IN ('BEBE-unknown', 'BEBL', 'FRBL', 'FRFR-unknown', 'LUBL', 'LULU-unknown','NLBL', 'NLGQ-unknown','NLNL-unknown') THEN 'Bleiswijk'
+WHEN CONCAT(ed.country,bs.dc) IN ('ESES-unknown','ESMadrid') THEN 'Madrid'
+WHEN CONCAT(ed.country,bs.dc) IN ('IEIE-unknown', 'IEDublin') THEN 'Dublin'
+WHEN CONCAT(ed.country,bs.dc) IN ('ITIT-unknown','ITMilan') THEN 'Milan'
+WHEN CONCAT(ed.country,bs.dc) IN ('NZNZ', 'NZNZ-unknown') THEN 'Auckland'
+WHEN CONCAT(ed.country,bs.dc) IN ('SESE', 'DKSE', 'SESE-unknown', 'DKDK-unknown') THEN 'Bjuv'
+WHEN CONCAT(ed.country,bs.dc) IN ('NONO', 'NONO-unknown') THEN 'Oslo'
+WHEN CONCAT(ed.country,bs.dc) = 'DEBarleben' THEN 'Barleben'
+WHEN CONCAT(ed.country,bs.dc) IN ('CHCH', 'CHCH-unknown') THEN 'Koelliken'
+WHEN CONCAT(ed.country,bs.dc) = 'UKBV' THEN 'Beehive-Nuneaton'
+WHEN CONCAT(ed.country,bs.dc) = 'UKTO' THEN 'Orchard-Derby'
+WHEN CONCAT(ed.country,bs.dc) IN ('UKGB-unknown','UKGN-unknown') THEN 'UK:unmapped'
+WHEN CONCAT(ed.country,bs.dc) = 'UKGR' THEN 'Granary-Banbury'
+ELSE CONCAT(ed.country,bs.dc)
+END as dc,
+bs.hellofresh_week,
+dd.hellofresh_month_name,
+dd.hellofresh_quarter,
+count(distinct bs.box_id) AS boxes
+from materialized_views.box_level_profit_contribution bs
+JOIN views_analysts.opsbi_product_dimensions_extended_taxonomy tax
+ON bs.fk_product = tax.sk_product
+JOIN dimensions.entity_dimension ed
+ON ed.bob_entity_code = bs.country
+INNER JOIN dimensions.date_dimension dd
+ON bs.hellofresh_week = dd.hellofresh_week
+where bs.hellofresh_week >='2023-W01'
+and tax.scor_stats_code = 3
+and ed.cluster = 'International'
+and ed.country not in ('US', 'ER', 'MR', 'FJ', 'CG')
+
+
+GROUP BY 1,2,3,4,5
+ORDER BY 1,2,3,4 ASC
+)
+
+, errors AS
+(SELECT country
+, CASE WHEN CONCAT(country,dc) IN ('AT:unmapped','ATVerden' ) THEN 'Verden'
+WHEN CONCAT(country,dc) = 'AUMelbourne' THEN 'Melbourne'
+WHEN CONCAT(country,dc) = 'AU:unmapped' THEN 'AU:unmapped'
+WHEN CONCAT(country,dc) = 'AUSydney' THEN 'Sydney'
+WHEN CONCAT(country,dc) = 'AUPerth' THEN 'Perth'
+WHEN CONCAT(country,dc) IN ('BEBleiswijk', 'BE:unmapped','FRBleiswijk', 'FR:unmapped', 'LU:unmapped', 'LUBleiswijk', 'NL:unmapped', 'NLBleiswijk') THEN 'Bleiswijk'
+WHEN CONCAT(country,dc) IN ('CHKoelliken','CH:unmapped' ) THEN 'Koelliken'
+WHEN CONCAT(country,dc) = 'DEVerden' THEN 'Verden'
+WHEN CONCAT(country,dc) = 'DE:unmapped' THEN 'Barleben'
+WHEN CONCAT(country,dc) IN ('DKBjuv', 'DK:unmapped', 'SE:unmapped', 'SEBjuv') THEN 'Bjuv'
+WHEN CONCAT(country,dc) = 'ES:unmapped' THEN 'Madrid'
+WHEN CONCAT(country,dc) IN ('Milan', ':unmapped') THEN 'Milan'
+WHEN CONCAT(country,dc) IN ('NZ:unmapped', 'NZAuckland') THEN 'Auckland'
+WHEN CONCAT(country,dc) IN (':unmapped','Bjuv') THEN 'Bjuv'
+WHEN CONCAT(country,dc) IN ('IT:unmapped', 'ITMilan') THEN 'Milan'
+WHEN CONCAT(country,dc) = 'IE:unmapped' THEN 'Dublin'
+WHEN CONCAT(country,dc) IN ('NO:unmapped', 'NOOslo') THEN 'Oslo'
+WHEN CONCAT(country,dc) IN ('UKBanbury') THEN 'Granary-Banbury'
+WHEN CONCAT(country,dc) IN ('UKDerby') THEN 'Orchard-Derby'
+WHEN CONCAT(country,dc) IN ('UKNuneaton') THEN 'Beehive-Nuneaton'
+WHEN CONCAT(country,dc) IN ('UK:unmapped') THEN 'UK:unmapped'
+ELSE CONCAT(country,dc)
+END as dc
+, hellofresh_week
+, hellofresh_month_label
+, hellofresh_quarter_label
+, SUM (error_count) AS Error
+FROM materialized_views.cc_errors_logistics_deep_dive
+WHERE hellofresh_week >= '2023-W01'
+AND mapped_error_subcategory = 'Early/Late Delivery'
+AND country not in ('US', 'ER', 'MR', 'FJ', 'CG', 'JP')
+GROUP BY 1,2,3,4,5
+ORDER BY 1,2,3,4 ASC)
+
+SELECT bs.country
+, bs.dc
+, bs.hellofresh_week
+, bs.hellofresh_month_name
+, bs.hellofresh_quarter
+, bs.boxes
+, errors.Error
+, ROUND (((errors.Error/bs.boxes) * 100), 2) AS Error_rate
+from errors
+JOIN bs
+ON bs.country = errors.country
+AND bs.hellofresh_week = errors.hellofresh_week
+AND bs.dc = errors.dc
+GROUP BY 1,2,3,4,5,6,7
+ORDER BY 1,2,3,4 ASC
